@@ -24,6 +24,34 @@ type build('a) = {
   workflows: 'a,
 };
 
+type diagnostic = (int, string);
+
+let diagnostic_of_build = x => {
+  let w = workflowsFromJs(x.workflows);
+  let sec = (x.start_time, x.stop_time)
+      |> ((a, b)) => (MomentRe.moment(a), MomentRe.moment(b))
+      |> ((a, b)) => MomentRe.diff(b, a, `seconds)
+      |> Int32.of_float
+      |> Int32.to_int;
+
+  let duration =
+    Printf.sprintf(
+      "%dmin%dsec",
+      sec / 60,
+      sec mod 60
+    );
+  let name =
+    Printf.sprintf(
+      "[build:%d] %s/%s:%s(%s)",
+      x.build_num,
+      x.username,
+      x.reponame,
+      x.branch,
+      w.job_name,
+    );
+  (duration, name);
+};
+
 /* let endpoint = "https://circleci.com/api/v1.1/me"; */
 let endpoint = "https://circleci.com/api/v1.1/recent-builds";
 
@@ -52,7 +80,12 @@ Async.(
   >>= Fetch.Response.text
   >>= (
     x => {
-      Js.log(x |> parseExn |> Array.map(buildFromJs));
+      Js.log(
+        x
+        |> parseExn
+        |> Array.map(buildFromJs)
+        |> Array.map(diagnostic_of_build),
+      );
       return();
     }
   )
