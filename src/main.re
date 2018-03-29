@@ -27,29 +27,27 @@ type build('a) = {
 type diagnostic = (int, string);
 
 let diagnostic_of_build = x => {
-  let w = workflowsFromJs(x.workflows);
-  let sec = (x.start_time, x.stop_time)
-      |> ((a, b)) => (MomentRe.moment(a), MomentRe.moment(b))
-      |> ((a, b)) => MomentRe.diff(b, a, `seconds)
-      |> Int32.of_float
-      |> Int32.to_int;
-
-  let duration =
-    Printf.sprintf(
-      "%dmin%dsec",
-      sec / 60,
-      sec mod 60
+  let w = x.workflows;
+  let sec =
+    (x.start_time, x.stop_time)
+    |> (
+      ((a, b)) =>
+        (MomentRe.moment(a), MomentRe.moment(b))
+        |> (
+          ((a, b)) =>
+            MomentRe.diff(b, a, `seconds) |> Int32.of_float |> Int32.to_int
+        )
     );
-  let name =
-    Printf.sprintf(
-      "[build:%d] %s/%s:%s(%s)",
-      x.build_num,
-      x.username,
-      x.reponame,
-      x.branch,
-      w.job_name,
-    );
-  (duration, name);
+  let duration = Printf.sprintf("%dmin%dsec", sec / 60, sec mod 60);
+  Printf.sprintf(
+    "[%d:%s] %s/%s:%s(%s)",
+    x.build_num,
+    duration,
+    x.username,
+    x.reponame,
+    x.branch,
+    w.job_name,
+  );
 };
 
 /* let endpoint = "https://circleci.com/api/v1.1/me"; */
@@ -79,12 +77,34 @@ Async.(
      )
   >>= Fetch.Response.text
   >>= (
-    x => {
+    xs => {
       Js.log(
-        x
+        xs
         |> parseExn
-        |> Array.map(buildFromJs)
-        |> Array.map(diagnostic_of_build),
+        |> Array.to_list
+        |> List.map(buildFromJs)
+        |> List.map(x => {...x, workflows: workflowsFromJs(x.workflows)})
+        |> List.fold_left(
+             (acc, x) => {
+               let ws =
+                 switch (Belt.Map.String.get(acc, x.workflows.workflow_id)) {
+                 | Some(ys) => [x, ...ys]
+                 | None => [x]
+                 };
+               Belt.Map.String.set(acc, x.workflows.workflow_id, ws);
+             },
+             Belt.Map.String.empty,
+           )
+        |> Belt.Map.String.(
+             forEach(
+               _,
+               (_, xs) => {
+                 Js.log("");
+                 List.iter(x => Js.log(diagnostic_of_build(x)), xs);
+                 Js.log("");
+               },
+             )
+           ),
       );
       return();
     }
